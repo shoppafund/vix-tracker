@@ -364,20 +364,7 @@ function frontSpread(entry) {
 
 // ========== DATA LOADING ==========
 async function loadData() {
-  // Try Gist first (live server data)
-  try {
-    const gistResp = await fetch("https://gist.githubusercontent.com/shoppafund/8587f837671a715be4f34f686abc7355/raw/vix_data.json?t=" + Date.now());
-    if (gistResp.ok) {
-      const d = await gistResp.json();
-      if (d.history && d.history.length > 0) {
-        history = d.history; current = d.currentEntry || d.history[d.history.length - 1];
-        if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
-        else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
-        dataSource = "gist"; return;
-      }
-    }
-  } catch(e) {}
-  // Fallback: embedded data
+  // 1. Embedded data first (always available, from last TWS fetch)
   if (window.__VIX_DATA__) {
     const d = window.__VIX_DATA__;
     if (d.history && d.history.length > 0) {
@@ -388,6 +375,7 @@ async function loadData() {
       dataSource = "json"; return;
     }
   }
+  // 2. Local vix_data.json (for local file use)
   try {
     const resp = await fetch("vix_data.json?t=" + Date.now());
     if (resp.ok) {
@@ -397,6 +385,19 @@ async function loadData() {
         if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
         else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
         dataSource = "json"; return;
+      }
+    }
+  } catch(e) {}
+  // 3. Gist (for GitHub Pages where no local file exists)
+  try {
+    const gistResp = await fetch("https://gist.githubusercontent.com/shoppafund/8587f837671a715be4f34f686abc7355/raw/vix_data.json?t=" + Date.now());
+    if (gistResp.ok) {
+      const d = await gistResp.json();
+      if (d.history && d.history.length > 0) {
+        history = d.history; current = d.currentEntry || d.history[d.history.length - 1];
+        if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
+        else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
+        dataSource = "gist"; return;
       }
     }
   } catch(e) {}

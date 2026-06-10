@@ -257,9 +257,31 @@
   <div class="chart-box"><canvas id="curveChart" height="180"></canvas></div>
   <div class="section-header">Short-Term Stress (60 sessions)</div>
   <div class="chart-box"><canvas id="stressChart" height="120"></canvas></div>
-  <div style="font-size:11px;color:#a8a8ac;margin:-6px 0 14px 4px;letter-spacing:0.04em">
+  <div style="font-size:11px;color:#a8a8ac;margin:-6px 0 8px 4px;letter-spacing:0.04em">
     VIX spot vs VIX9D vs front future. Red band = spot &gt; front (front-end backwardation). Orange band = VIX9D &gt; VIX (9-day above 30-day).
   </div>
+  <details style="background:rgba(255,255,255,0.02);border:1px solid #2a2a2e;border-radius:6px;padding:8px 12px;margin:0 0 16px 0;font-size:12.5px;color:#d0d0d4;line-height:1.55">
+    <summary style="cursor:pointer;color:#5ac8fa;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;font-size:11.5px;user-select:none;outline:none">
+      How to read this chart
+    </summary>
+    <div style="padding:10px 4px 4px 4px">
+      <div style="margin-bottom:8px"><strong style="color:#ffffff">The three lines:</strong></div>
+      <ul style="margin:0 0 10px 18px;padding:0">
+        <li><strong style="color:#ffffff">White (VIX Spot)</strong> — 30-day implied vol on SPX. The headline VIX.</li>
+        <li><strong style="color:#ff9f0a">Orange (VIX9D)</strong> — 9-day implied vol. More reactive to near-term event risk.</li>
+        <li><strong style="color:#5ac8fa">Blue dashed (Front Future)</strong> — what the market expects VIX to be ~30 days out.</li>
+      </ul>
+      <div style="margin-bottom:6px"><strong style="color:#30d158">Healthy / calm pattern:</strong> Blue dashed on top, white in middle, orange at the bottom. Textbook contango calm — the future is priced higher than now, and 9-day is calmer than 30-day.</div>
+      <div style="margin:10px 0 6px 0"><strong style="color:#ff9f0a">Three stress patterns to watch (in order of severity):</strong></div>
+      <ol style="margin:0 0 10px 18px;padding:0">
+        <li><strong>Orange crosses above white</strong> → VIX9D &gt; VIX. Near-term vol pricing higher than 30-day. Earliest warning of front-end nervousness.</li>
+        <li><strong>White crosses above blue dashed</strong> → Spot above front future. Front-end backwardation — spot VIX higher than what the curve priced for the next month.</li>
+        <li><strong>All three converge and rise together</strong> → Real regime change. Vol at every horizon catching up to itself.</li>
+      </ol>
+      <div><strong style="color:#ffffff">Background shading:</strong> <span style="color:#ff453a">red band</span> = spot &gt; front future active. <span style="color:#ff9f0a">orange band</span> = VIX9D &gt; VIX active. Faint green = calm.</div>
+      <div style="margin-top:8px;color:#a8a8ac;font-style:italic">Tip: regime shifts show up in line position before they show up in the signal checklist. Use this chart to spot tilts in advance.</div>
+    </div>
+  </details>
   <div class="section-header">Calendar Spreads</div>
   <div class="metrics" id="spread-metrics"></div>
   <div class="section-header">Butterfly Spreads</div>

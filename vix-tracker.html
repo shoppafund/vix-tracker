@@ -766,18 +766,40 @@ function render() {
       if (v != null && v9 != null && v9 > v) return "rgba(255,159,10,0.14)";
       return "rgba(48,209,88,0.05)";
     });
+    // Plugin: draw vertical colored bands behind the chart area where
+    // stress conditions are active. Drawn in beforeDatasetsDraw so it
+    // appears behind every line.
+    const stressBandsPlugin = {
+      id: "stressBands",
+      beforeDatasetsDraw(chart) {
+        const { ctx: c, chartArea: area, scales } = chart;
+        if (!area || !scales.x) return;
+        const xScale = scales.x;
+        const n = vixSeries.length;
+        for (let i = 0; i < n; i++) {
+          const v = vixSeries[i], v9 = vix9dSeries[i], f = frontSeries[i];
+          if (v == null) continue;
+          let color = null;
+          if (f != null && v > f) color = "rgba(255,69,58,0.20)";       // red — spot > front
+          else if (v9 != null && v9 > v) color = "rgba(255,159,10,0.18)"; // orange — VIX9D > VIX
+          if (!color) continue;
+          // Draw a band centered on tick i, spanning to its neighbors.
+          const xCenter = xScale.getPixelForValue(i);
+          const xPrev = i > 0 ? xScale.getPixelForValue(i - 1) : xCenter - 4;
+          const xNext = i < n - 1 ? xScale.getPixelForValue(i + 1) : xCenter + 4;
+          const xLeft = (xPrev + xCenter) / 2;
+          const xRight = (xCenter + xNext) / 2;
+          c.fillStyle = color;
+          c.fillRect(xLeft, area.top, xRight - xLeft, area.bottom - area.top);
+        }
+      }
+    };
+
     stressChartInstance = new Chart(sctx, {
       type: "line",
       data: {
         labels,
         datasets: [
-          { label: "stress shading", data: vixSeries.map(v => v != null ? v + 5 : null),
-            borderWidth: 0, pointRadius: 0, fill: { target: { value: 0 } },
-            backgroundColor: ctx => {
-              const i = ctx.dataIndex;
-              return bgFill[i] || "rgba(0,0,0,0)";
-            },
-            order: 99 },
           { label: "Front Future", data: frontSeries, borderColor: "#5ac8fa",
             backgroundColor: "transparent", borderWidth: 1.6, tension: 0.25,
             pointRadius: 0, borderDash: [4, 4] },
@@ -792,15 +814,8 @@ function render() {
       options: {
         responsive: true,
         plugins: {
-          legend: {
-            display: true,
-            labels: { color: "#c8c8cc", font: { size: 11 },
-              filter: item => item.text !== "stress shading" }
-          },
-          tooltip: {
-            mode: "index", intersect: false,
-            filter: tt => tt.dataset.label !== "stress shading"
-          },
+          legend: { display: true, labels: { color: "#c8c8cc", font: { size: 11 } } },
+          tooltip: { mode: "index", intersect: false },
         },
         interaction: { mode: "index", intersect: false },
         scales: {
@@ -809,7 +824,8 @@ function render() {
           y: { ticks: { color: "#c8c8cc", font: { size: 10 } },
                grid: { color: "#3a3a3e" } }
         }
-      }
+      },
+      plugins: [stressBandsPlugin]
     });
   }
 

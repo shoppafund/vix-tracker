@@ -255,6 +255,11 @@
   <div class="metrics" id="top-metrics"></div>
   <div class="section-header">Term Structure</div>
   <div class="chart-box"><canvas id="curveChart" height="180"></canvas></div>
+  <div class="section-header">Short-Term Stress (60 sessions)</div>
+  <div class="chart-box"><canvas id="stressChart" height="120"></canvas></div>
+  <div style="font-size:11px;color:#a8a8ac;margin:-6px 0 14px 4px;letter-spacing:0.04em">
+    VIX spot vs VIX9D vs front future. Red band = spot &gt; front (front-end backwardation). Orange band = VIX9D &gt; VIX (9-day above 30-day).
+  </div>
   <div class="section-header">Calendar Spreads</div>
   <div class="metrics" id="spread-metrics"></div>
   <div class="section-header">Butterfly Spreads</div>
@@ -290,6 +295,7 @@ let LABELS = {};
 let history = [];
 let current = null;
 let curveChartInstance = null;
+let stressChartInstance = null;
 let editMode = false;
 let dataSource = "none";
 
@@ -364,7 +370,20 @@ function frontSpread(entry) {
 
 // ========== DATA LOADING ==========
 async function loadData() {
-  // 1. Embedded data first (always available, from last TWS fetch)
+  // Try Gist first (live server data)
+  try {
+    const gistResp = await fetch("https://gist.githubusercontent.com/shoppafund/8587f837671a715be4f34f686abc7355/raw/vix_data.json?t=" + Date.now());
+    if (gistResp.ok) {
+      const d = await gistResp.json();
+      if (d.history && d.history.length > 0) {
+        history = d.history; current = d.currentEntry || d.history[d.history.length - 1];
+        if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
+        else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
+        dataSource = "gist"; return;
+      }
+    }
+  } catch(e) {}
+  // Fallback: embedded data
   if (window.__VIX_DATA__) {
     const d = window.__VIX_DATA__;
     if (d.history && d.history.length > 0) {
@@ -375,7 +394,6 @@ async function loadData() {
       dataSource = "json"; return;
     }
   }
-  // 2. Local vix_data.json (for local file use)
   try {
     const resp = await fetch("vix_data.json?t=" + Date.now());
     if (resp.ok) {
@@ -385,19 +403,6 @@ async function loadData() {
         if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
         else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
         dataSource = "json"; return;
-      }
-    }
-  } catch(e) {}
-  // 3. Gist (for GitHub Pages where no local file exists)
-  try {
-    const gistResp = await fetch("https://gist.githubusercontent.com/shoppafund/8587f837671a715be4f34f686abc7355/raw/vix_data.json?t=" + Date.now());
-    if (gistResp.ok) {
-      const d = await gistResp.json();
-      if (d.history && d.history.length > 0) {
-        history = d.history; current = d.currentEntry || d.history[d.history.length - 1];
-        if (d.contractInfo) { CONTRACTS = d.contractInfo.contracts; LABELS = d.contractInfo.labels; }
-        else { CONTRACTS = getContractKeys(current); CONTRACTS.forEach(c => { if (!LABELS[c]) LABELS[c] = c; }); }
-        dataSource = "gist"; return;
       }
     }
   } catch(e) {}
@@ -537,10 +542,22 @@ function getEntryScore() {
   const vvixPts = vvix < 110 ? 25 : vvix < 115 ? 15 : vvix < 120 ? 5 : 0;
   score += vvixPts;
   breakdown.push({ label: `VVIX: ${vvix.toFixed(1)}`, detail: vvix < 110 ? "< 110 calm ✓" : vvix < 115 ? "110–115 elevated" : vvix < 120 ? "115–120 high" : "> 120 extreme ✗", pts: vvixPts, max: 25, pass: vvix < 110, warn: vvix >= 110 && vvix < 120 });
+  // VIX/VIX9D scoring — symmetric around 1.0:
+  //   ratio in [1.00, 1.10] → calm (full 20 pts)
+  //   ratio in [0.97, 1.00) → front-end mild stress (VIX9D ABOVE VIX): 8 pts
+  //   ratio in (1.10, 1.15] → elevated: 10 pts
+  //   ratio < 0.97 (real inversion) OR > 1.15 (spike) → 0 pts
   const ratio = vix9d > 0 ? vix / vix9d : 0;
-  const ratioPts = ratio < 1.0 ? 20 : ratio < 1.05 ? 12 : ratio < 1.15 ? 5 : 0;
+  let ratioPts = 0, ratioDetail = "—";
+  if (ratio >= 1.00 && ratio <= 1.10) { ratioPts = 20; ratioDetail = "1.00–1.10 calm ✓"; }
+  else if (ratio >= 0.97 && ratio < 1.00) { ratioPts = 8; ratioDetail = "VIX9D > VIX (front-end caution)"; }
+  else if (ratio > 1.10 && ratio <= 1.15) { ratioPts = 10; ratioDetail = "1.10–1.15 elevated"; }
+  else if (ratio < 0.97) { ratioPts = 0; ratioDetail = "VIX9D ≫ VIX (front-end inverted ✗)"; }
+  else { ratioPts = 0; ratioDetail = "> 1.15 spiking ✗"; }
   score += ratioPts;
-  breakdown.push({ label: `VIX/VIX9D: ${ratio.toFixed(2)}`, detail: ratio < 1.0 ? "< 1.0 calm ✓" : ratio < 1.05 ? "slightly elevated" : ratio < 1.15 ? "caution" : "spiking ✗", pts: ratioPts, max: 20, pass: ratio < 1.0, warn: ratio >= 1.0 && ratio < 1.15 });
+  const ratioPass = ratioPts >= 20;
+  const ratioWarn = ratioPts > 0 && ratioPts < 20;
+  breakdown.push({ label: `VIX/VIX9D: ${ratio.toFixed(2)}`, detail: ratioDetail, pts: ratioPts, max: 20, pass: ratioPass, warn: ratioWarn });
   const fsPts = fs <= -0.5 ? 15 : fs <= -0.25 ? 10 : fs < 0 ? 5 : 0;
   score += fsPts;
   breakdown.push({ label: `Front spread: ${fs.toFixed(3)}`, detail: fs <= -0.5 ? "deep ✓" : fs <= -0.25 ? "decent" : fs < 0 ? "shallow" : "inverted ✗", pts: fsPts, max: 15, pass: fs <= -0.25, warn: fs < 0 && fs > -0.25 });
@@ -661,7 +678,7 @@ function render() {
   document.getElementById("top-metrics").innerHTML = [
     metricHTML("VIX Spot", current.vix, { alert: current.vix > 30 }),
     metricHTML("VIX9D", current.vix9d),
-    metricHTML("VIX/VIX9D", ratio, { sub: ratio > 1.15 ? "⚠ elevated" : "normal" }),
+    metricHTML("VIX/VIX9D", ratio, { sub: ratio < 0.97 ? "⚠ VIX9D > VIX (front-end stress)" : ratio < 1.0 ? "VIX9D > VIX (caution)" : ratio > 1.15 ? "⚠ elevated" : ratio > 1.10 ? "slightly elevated" : "normal" }),
     metricHTML("VVIX", current.vvix, { alert: current.vvix > 120 }),
     metricHTML("VIX Premium", isNaN(vixPrem) ? "—" : vixPrem, { sub: "spot − front future" }),
   ].join("");
@@ -703,6 +720,76 @@ function render() {
     data: { labels: keys.map(c => LABELS[c] || c), datasets: [{ data: keys.map(c => current.contracts[c]), borderColor: lc, backgroundColor: lc + "20", fill: true, pointBackgroundColor: "#f0f0f2", pointRadius: 4, tension: 0.3, borderWidth: 2 }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#c8c8cc", font: { size: 11 } }, grid: { color: "#3e3e42" } }, y: { ticks: { color: "#c8c8cc", font: { size: 11 } }, grid: { color: "#3a3a3e" } } } }
   });
+
+  // ========== Short-Term Stress Chart ==========
+  // VIX spot vs VIX9D vs front future over last 60 sessions.
+  // Highlight red when spot > front (front backwardation),
+  // orange when VIX9D > VIX (9-day above 30-day).
+  const stressCanvas = document.getElementById("stressChart");
+  if (stressCanvas) {
+    const sctx = stressCanvas.getContext("2d");
+    if (stressChartInstance) stressChartInstance.destroy();
+    const recent = history.slice(-60);
+    const labels = recent.map(h => h.date ? h.date.slice(5) : "");
+    const vixSeries = recent.map(h => Number(h.vix) || null);
+    const vix9dSeries = recent.map(h => Number(h.vix9d) || null);
+    const frontSeries = recent.map(h => {
+      const keys = h.contracts ? Object.keys(h.contracts).sort() : [];
+      return keys.length ? Number(h.contracts[keys[0]]) : null;
+    });
+    // Stress fills (drawn as datasets above zero baseline-ish using point colors)
+    const bgFill = recent.map((h, i) => {
+      const v = vixSeries[i], v9 = vix9dSeries[i], f = frontSeries[i];
+      if (v != null && f != null && v > f) return "rgba(255,69,58,0.18)";
+      if (v != null && v9 != null && v9 > v) return "rgba(255,159,10,0.14)";
+      return "rgba(48,209,88,0.05)";
+    });
+    stressChartInstance = new Chart(sctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "stress shading", data: vixSeries.map(v => v != null ? v + 5 : null),
+            borderWidth: 0, pointRadius: 0, fill: { target: { value: 0 } },
+            backgroundColor: ctx => {
+              const i = ctx.dataIndex;
+              return bgFill[i] || "rgba(0,0,0,0)";
+            },
+            order: 99 },
+          { label: "Front Future", data: frontSeries, borderColor: "#5ac8fa",
+            backgroundColor: "transparent", borderWidth: 1.6, tension: 0.25,
+            pointRadius: 0, borderDash: [4, 4] },
+          { label: "VIX9D", data: vix9dSeries, borderColor: "#ff9f0a",
+            backgroundColor: "transparent", borderWidth: 1.8, tension: 0.25,
+            pointRadius: 0 },
+          { label: "VIX Spot", data: vixSeries, borderColor: "#ffffff",
+            backgroundColor: "transparent", borderWidth: 2.2, tension: 0.25,
+            pointRadius: 0 },
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: "#c8c8cc", font: { size: 11 },
+              filter: item => item.text !== "stress shading" }
+          },
+          tooltip: {
+            mode: "index", intersect: false,
+            filter: tt => tt.dataset.label !== "stress shading"
+          },
+        },
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { ticks: { color: "#c8c8cc", font: { size: 10 }, maxTicksLimit: 10 },
+               grid: { color: "#3a3a3e" } },
+          y: { ticks: { color: "#c8c8cc", font: { size: 10 } },
+               grid: { color: "#3a3a3e" } }
+        }
+      }
+    });
+  }
 
   // Signal checklist — now with long vol impact column
   const fs0 = spreads.length > 0 ? spreads[0].value : 0;

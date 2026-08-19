@@ -377,11 +377,26 @@ function getVvixVixDivergence() {
 }
 
 // ========== CONTRACT HELPERS ==========
+// Contract symbols look like VX{MonthCode}{YY} — VXU26=Sep26, VXV26=Oct26,
+// VXX26=Nov26, VXZ26=Dec26, VXF27=Jan27. Alphabetical sort BREAKS when
+// contracts span years: "VXF27" (Jan27) sorts BEFORE "VXU26" (Sep26)
+// because 'F' < 'U'. Result: keys[0] was the FURTHEST-out contract, not
+// the front, breaking frontSpread(), the stress chart, and the streak
+// counters. Sort by actual expiry instead.
+const _VX_MONTH_CODE_ORDER = { F:1, G:2, H:3, J:4, K:5, M:6, N:7, Q:8, U:9, V:10, X:11, Z:12 };
+function _vxExpiryKey(sym) {
+  // Parse "VX" + MonthCode + 2-digit year → sortable integer YYYYMM.
+  const m = /^VX([FGHJKMNQUVXZ])(\d{2})$/.exec(sym);
+  if (!m) return 999999;              // unknown symbols fall to the back
+  const year = 2000 + parseInt(m[2], 10);
+  const month = _VX_MONTH_CODE_ORDER[m[1]];
+  return year * 100 + month;
+}
 function getContractKeys(entry) {
   if (!entry || !entry.contracts) return [];
   return Object.keys(entry.contracts)
     .filter(k => typeof entry.contracts[k] === "number" && !isNaN(entry.contracts[k]) && entry.contracts[k] > 0)
-    .sort();
+    .sort((a, b) => _vxExpiryKey(a) - _vxExpiryKey(b));
 }
 
 function frontSpread(entry) {
@@ -756,7 +771,8 @@ function render() {
     const vixSeries = recent.map(h => Number(h.vix) || null);
     const vix9dSeries = recent.map(h => Number(h.vix9d) || null);
     const frontSeries = recent.map(h => {
-      const keys = h.contracts ? Object.keys(h.contracts).sort() : [];
+      // Use expiry-order helper, not alphabetical — spanning years breaks alpha sort.
+      const keys = getContractKeys(h);
       return keys.length ? Number(h.contracts[keys[0]]) : null;
     });
     // Stress fills (drawn as datasets above zero baseline-ish using point colors)
